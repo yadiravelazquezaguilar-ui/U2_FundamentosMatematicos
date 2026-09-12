@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">FM</title>
+  <desc id="desc">Monograma de Fundamentos Matemáticos</desc>
+  <defs>
+    <linearGradient id="bg" x1="18" y1="12" x2="112" y2="118" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#13213d"/>
+      <stop offset="1" stop-color="#244a7a"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="url(#bg)"/>
+  <circle cx="64" cy="64" r="56" fill="none" stroke="#6aa7ff" stroke-width="2" opacity=".55"/>
+  <text x="64" y="76" text-anchor="middle" fill="#ffffff" font-family="Montserrat, Arial, sans-serif" font-size="42" font-weight="800" letter-spacing="-2">FM</text>
+</svg>
