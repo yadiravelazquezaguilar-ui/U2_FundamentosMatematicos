@@ -3,6 +3,7 @@ import {useEffect,useMemo,useRef,useState} from "react";
 
 type User={matricula:string;name:string;role:"alumno"|"docente"};
 type StoredProgress={done?:string[];errorCount?:number;attemptCount?:number;topicErrors?:Record<number,number>;resetAt?:string;topic?:number};
+type SaveStatus="saved"|"saving"|"error";
 type Quick={q:string;a:string[];hint:string};
 type Quiz={q:string;options:string[];a:string;why:string};
 type Pair=[string,string];
@@ -112,7 +113,8 @@ export default function Home(){
  const[user,setUser]=useState<User|null>(null),[authReady,setAuthReady]=useState(false),[authMode,setAuthMode]=useState<"login"|"register">("login"),[authBusy,setAuthBusy]=useState(false),[authError,setAuthError]=useState(""),[groups,setGroups]=useState<{id:string;nombre:string}[]>([]),[form,setForm]=useState({matricula:"",password:"",name:"",groupId:""});
  const[ti,setTi]=useState(0),[tab,setTab]=useState<ModuleKey>("quick"),[done,setDone]=useState<string[]>([]),[errors,setErrors]=useState(0),[attempts,setAttempts]=useState(0),[topicErrors,setTopicErrors]=useState<Record<number,number>>({}),[round,setRound]=useState(0),[reviewErrors,setReviewErrors]=useState(0),[note,setNote]=useState("");
  const[input,setInput]=useState(""),[quickIndex,setQuickIndex]=useState(0),[quickSolved,setQuickSolved]=useState(0),[quizAnswers,setQuizAnswers]=useState<Record<number,string>>({}),[matchAnswers,setMatchAnswers]=useState<Record<number,string>>({}),[opened,setOpened]=useState<number[]>([]),[matched,setMatched]=useState<number[]>([]),[seqIndex,setSeqIndex]=useState(0),[seqPick,setSeqPick]=useState<string[]>([]),[tfAnswers,setTfAnswers]=useState<Record<number,boolean>>({});
- const resetAt=useRef("");const t=topics[ti];
+ const[saveStatus,setSaveStatus]=useState<SaveStatus>("saved");
+ const resetAt=useRef(""),saveVersion=useRef(0);const t=topics[ti];
  const quick=useMemo(()=>shuffle(t.quick,ti*101+round*17).slice(0,5),[t,ti,round]);
  const quiz=useMemo(()=>shuffle(t.quiz,ti*103+round*19).slice(0,5),[t,ti,round]);
  const pairs=useMemo(()=>shuffle(t.pairs,ti*107+round*23).slice(0,5),[t,ti,round]);
@@ -127,12 +129,21 @@ export default function Home(){
  const resetModule=()=>{setInput("");setQuickIndex(0);setQuickSolved(0);setQuizAnswers({});setMatchAnswers({});setOpened([]);setMatched([]);setSeqIndex(0);setSeqPick([]);setTfAnswers({});setReviewErrors(0);setNote("")};
  const openTopic=(i:number)=>{setTi(i);setTab("quick");setRound(0);resetModule()};
  const applyProgress=(p:StoredProgress)=>{setDone(p?.done||[]);setErrors(Number(p?.errorCount)||0);setAttempts(Number(p?.attemptCount)||0);setTopicErrors(p?.topicErrors||{});resetAt.current=typeof p?.resetAt==="string"?p.resetAt:"";setTi(Number.isInteger(p?.topic)?Number(p.topic):0)};
- async function persist(){if(!user)return;const r=await fetch("/api/student",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({progress:{done,topic:ti,errorCount:errors,attemptCount:attempts,topicErrors,resetAt:resetAt.current||undefined,updatedAt:Date.now()}})});if(r.status===409){const d=await r.json();applyProgress(d.progress||{});resetModule();window.alert("Tu docente reinició el progreso de la Unidad II. El intento anterior quedó archivado.")}}
+ async function persist(){
+  if(!user)return true;
+  const version=++saveVersion.current;setSaveStatus("saving");
+  try{
+   const r=await fetch("/api/student",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify({progress:{done,topic:ti,errorCount:errors,attemptCount:attempts,topicErrors,resetAt:resetAt.current||undefined,updatedAt:Date.now()}})});
+   if(r.status===409){const d=await r.json();applyProgress(d.progress||{});resetModule();if(version===saveVersion.current)setSaveStatus("saved");window.alert("Tu docente reinició el progreso de la Unidad II. El intento anterior quedó archivado.");return true}
+   if(!r.ok)throw new Error("No fue posible guardar el progreso");
+   if(version===saveVersion.current)setSaveStatus("saved");return true
+  }catch{if(version===saveVersion.current)setSaveStatus("error");return false}
+ }
  useEffect(()=>{fetch("/api/student").then(async r=>{if(r.ok){const d=await r.json();setUser(d.user);applyProgress(d.progress||{})}}).finally(()=>setAuthReady(true));fetch("/api/groups").then(r=>r.ok?r.json():{groups:[]}).then(d=>setGroups(d.groups||[]))},[]);
  useEffect(()=>{if(!user)return;const id=setTimeout(()=>{void persist()},500);return()=>clearTimeout(id)},[done,ti,errors,attempts,topicErrors,user]);
  useEffect(()=>{if(!user)return;let timer:ReturnType<typeof setTimeout>;const renew=()=>{clearTimeout(timer);timer=setTimeout(()=>{void logout(true)},30*60*1000)};const events=["pointerdown","pointermove","keydown","scroll","touchstart"] as const;events.forEach(e=>window.addEventListener(e,renew,{passive:true}));renew();return()=>{clearTimeout(timer);events.forEach(e=>window.removeEventListener(e,renew))}},[user]);
  async function submitAuth(e:React.FormEvent){e.preventDefault();setAuthBusy(true);setAuthError("");const r=await fetch("/api/student",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:authMode,...form})});const d=await r.json();if(!r.ok){setAuthBusy(false);setAuthError(d.error||"No fue posible ingresar.");return}const saved=await fetch("/api/student");if(saved.ok){const p=await saved.json();applyProgress(p.progress||{})}setUser(d.user);setAuthBusy(false)}
- async function logout(idle=false){await persist();await fetch("/api/student",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"logout"})});setUser(null);if(idle)window.alert("La sesión se cerró después de 30 minutos de inactividad. Tu progreso quedó guardado.")}
+ async function logout(idle=false){const saved=await persist();if(!saved){window.alert("No fue posible guardar tu progreso. Revisa la conexión y usa ‘Reintentar guardado’ antes de salir.");return}await fetch("/api/student",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"logout"})});setUser(null);if(idle)window.alert("La sesión se cerró después de 30 minutos de inactividad. Tu progreso quedó guardado.")}
  function checkQuick(){const q=quick[quickIndex],ok=q.a.some(a=>clean(a)===clean(input));addResult(1,ok?0:1);if(!ok){setNote(`Aún no. Pista: ${q.hint}`);return}const n=quickSolved+1;setQuickSolved(n);setInput("");setNote("¡Correcto! Continúa con el siguiente ejercicio.");if(n===5)mark("quick");else setQuickIndex(i=>i+1)}
  function retry(message:string){setRound(v=>v+1);setQuizAnswers({});setMatchAnswers({});setTfAnswers({});setNote(message)}
  function checkQuiz(){if(Object.keys(quizAnswers).length<5){setNote("Responde las cinco preguntas antes de corroborar.");return}const wrong=quiz.filter((q,i)=>quizAnswers[i]!==q.a).length;addResult(5,wrong);if(!wrong){mark("quiz");setNote("¡Correcto! Las cinco respuestas fueron comprobadas.")}else retry(`Hay ${wrong} respuestas por revisar. Lee nuevamente cada enunciado.`)}
@@ -156,7 +167,7 @@ export default function Home(){
     {tab==="tf"&&<div className="tf-list">{tfItems.map((q,i)=><fieldset key={q.text}><legend>{i+1}. <MathText text={q.text}/></legend><label><input type="radio" name={`tf${i}`} checked={tfAnswers[i]===true} onChange={()=>setTfAnswers({...tfAnswers,[i]:true})}/>Verdadero</label><label><input type="radio" name={`tf${i}`} checked={tfAnswers[i]===false} onChange={()=>setTfAnswers({...tfAnswers,[i]:false})}/>Falso</label></fieldset>)}<button onClick={checkTf}>Corroborar los cinco enunciados</button></div>}
     {note&&<div className={note.startsWith("¡Correcto")?"module-note success":"module-note error"}>{note}</div>}
    </div></div></div></section>
-  <section className="progress-section"><div className="section progress-wrap"><div><span className="kicker light"><i/> Tu avance</span><h2>Domina la Unidad II paso a paso.</h2><p>Completa seis modalidades en cada uno de los cuatro temas.</p></div><div className="progress-card"><div className="ring" style={{"--value":`${progress*3.6}deg`} as React.CSSProperties}><span>{progress}%</span></div><div><strong>{done.length} de 24</strong><p>actividades completadas</p></div></div></div></section>
+  <section className="progress-section"><div className="section progress-wrap"><div><span className="kicker light"><i/> Tu avance</span><h2>Domina la Unidad II paso a paso.</h2><p>Completa seis modalidades en cada uno de los cuatro temas.</p></div><div className="progress-card"><div className="ring" style={{"--value":`${progress*3.6}deg`} as React.CSSProperties}><span>{progress}%</span></div><div><strong>{done.length} de 24</strong><p>actividades completadas</p><p className={`save-state ${saveStatus}`} aria-live="polite">{saveStatus==="saving"?"Guardando…":saveStatus==="error"?"No se guardó el último cambio":"Progreso guardado"}</p>{saveStatus==="error"&&<button className="retry-save" onClick={()=>void persist()}>Reintentar guardado</button>}</div></div></div></section>
   <footer><a className="logo" href="#inicio"><img className="logo-image" src="/brand-icon-fm.svg" alt="Monograma FM"/><span>Fundamentos <span>Matemáticos</span></span></a><p>Unidad 2 · Ecuaciones e inecuaciones</p><a href="#inicio">Volver arriba ↑</a></footer>
  </main>
 }
