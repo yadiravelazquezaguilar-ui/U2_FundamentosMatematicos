@@ -61,7 +61,23 @@ export async function PUT(request:Request){
  const savedRequest=await authRequest(`/rest/v1/estado_alumno?alumno_id=eq.${current.profile.id}&select=progreso`,{headers:{Authorization:`Bearer ${current.accessToken}`,Accept:"application/vnd.pgrst.object+json"}});const savedRoot=savedRequest.ok?(await savedRequest.json() as {progreso?:Record<string,unknown>}).progreso||{}:{};const saved=(savedRoot.u2&&typeof savedRoot.u2==="object"?savedRoot.u2:{}) as Record<string,unknown>;
  const savedReset=typeof saved.resetAt==="string"?saved.resetAt:"",incomingReset=typeof incoming.resetAt==="string"?incoming.resetAt:"";
  if(savedReset&&savedReset!==incomingReset)return Response.json({error:"El docente reinició este intento.",reset:true,progress:saved},{status:409,headers:sessionHeaders(current.tokens)});
- const progress={...incoming,resetAt:savedReset||incomingReset||undefined,history:Array.isArray(saved.history)?saved.history:Array.isArray(incoming.history)?incoming.history:[]};
+ const savedDone=Array.isArray(saved.done)?saved.done.filter((item):item is string=>typeof item==="string"):[];
+ const incomingDone=Array.isArray(incoming.done)?incoming.done.filter((item):item is string=>typeof item==="string"):[];
+ const savedTopicErrors=saved.topicErrors&&typeof saved.topicErrors==="object"?saved.topicErrors as Record<string,unknown>:{};
+ const incomingTopicErrors=incoming.topicErrors&&typeof incoming.topicErrors==="object"?incoming.topicErrors as Record<string,unknown>:{};
+ const topicErrors=Object.fromEntries([...new Set([...Object.keys(savedTopicErrors),...Object.keys(incomingTopicErrors)])].map(key=>[key,Math.max(Number(savedTopicErrors[key])||0,Number(incomingTopicErrors[key])||0)]));
+ // El avance de un mismo intento es acumulativo. Así, una solicitud antigua que
+ // llegue tarde nunca puede borrar una actividad que ya fue completada.
+ const progress={
+  ...saved,
+  ...incoming,
+  done:[...new Set([...savedDone,...incomingDone])],
+  errorCount:Math.max(Number(saved.errorCount)||0,Number(incoming.errorCount)||0),
+  attemptCount:Math.max(Number(saved.attemptCount)||0,Number(incoming.attemptCount)||0),
+  topicErrors,
+  resetAt:savedReset||incomingReset||undefined,
+  history:Array.isArray(saved.history)?saved.history:Array.isArray(incoming.history)?incoming.history:[]
+ };
  const r=await authRequest("/rest/v1/estado_alumno?on_conflict=alumno_id",{method:"POST",headers:{Authorization:`Bearer ${current.accessToken}`,Prefer:"resolution=merge-duplicates,return=minimal"},body:JSON.stringify({alumno_id:current.profile.id,progreso:{...savedRoot,u2:progress},updated_at:new Date().toISOString()})});
  if(!r.ok)return Response.json({error:"No fue posible guardar el progreso."},{status:500});return Response.json({ok:true},{headers:sessionHeaders(current.tokens)});
 }
