@@ -105,7 +105,7 @@ const topics:Topic[]=[
 
 const modules={quick:["1","Respuesta abierta"],quiz:["2","Opción múltiple"],match:["3","Relacionar"],memory:["4","Memoria"],sequence:["5","Ordenar pasos"],tf:["6","Verdadero/Falso"]} as const;
 type ModuleKey=keyof typeof modules;
-const clean=(v:string)=>v.toLowerCase().replace(/\s+/g,"").replaceAll("−","-").replaceAll("∞","infinito").replace(/[{}]/g,"");
+const clean=(v:string)=>v.toLowerCase().replace(/\s+/g,"").replaceAll("−","-").replaceAll("∞","infinito").replaceAll("≤","<=").replaceAll("≥",">=").replace(/[{}]/g,"");
 function shuffle<T>(items:T[],seed:number){const a=[...items];let s=seed+1;for(let i=a.length-1;i>0;i--){s=(s*9301+49297)%233280;const j=Math.floor(s/233280*(i+1));[a[i],a[j]]=[a[j],a[i]]}return a}
 function MathText({text}:{text:string}){const parts=text.split(/(-?\d+)\/(-?\d+)/g);return <>{parts.map((part,i)=>i%3===1?<span className="frac" key={i}><span>{part}</span><span>{parts[i+1]}</span></span>:i%3===2?null:<span key={i}>{part}</span>)}</>}
 
