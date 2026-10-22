@@ -31,7 +31,8 @@ async function session(request:Request){
 export async function GET(request:Request){
  const current=await session(request);if(!current)return Response.json({user:null},{status:401,headers:sessionHeaders(undefined,true)});
  const r=await authRequest(`/rest/v1/estado_alumno?alumno_id=eq.${current.profile.id}&select=progreso`,{headers:{Authorization:`Bearer ${current.accessToken}`,Accept:"application/vnd.pgrst.object+json"}});
- const stored=r.ok?(await r.json() as {progreso?:Record<string,unknown>}).progreso||{}:{};
+ if(!r.ok)return Response.json({error:"No fue posible recuperar el progreso. Intenta ingresar nuevamente."},{status:503,headers:sessionHeaders(current.tokens)});
+ const stored=(await r.json() as {progreso?:Record<string,unknown>}).progreso||{};
  const progress=(stored.u2&&typeof stored.u2==="object"?stored.u2:{}) as Record<string,unknown>;
  return Response.json({user:{matricula:current.profile.matricula,name:current.profile.nombre_completo,role:current.profile.rol},progress},{headers:sessionHeaders(current.tokens)});
 }
@@ -58,7 +59,7 @@ export async function POST(request:Request){
 export async function PUT(request:Request){
  const current=await session(request);if(!current)return Response.json({error:"Sesión no válida"},{status:401,headers:sessionHeaders(undefined,true)});
  const body=await request.json() as {progress?:Record<string,unknown>};const incoming=body.progress||{};
- const savedRequest=await authRequest(`/rest/v1/estado_alumno?alumno_id=eq.${current.profile.id}&select=progreso`,{headers:{Authorization:`Bearer ${current.accessToken}`,Accept:"application/vnd.pgrst.object+json"}});const savedRoot=savedRequest.ok?(await savedRequest.json() as {progreso?:Record<string,unknown>}).progreso||{}:{};const saved=(savedRoot.u2&&typeof savedRoot.u2==="object"?savedRoot.u2:{}) as Record<string,unknown>;
+ const savedRequest=await authRequest(`/rest/v1/estado_alumno?alumno_id=eq.${current.profile.id}&select=progreso`,{headers:{Authorization:`Bearer ${current.accessToken}`,Accept:"application/vnd.pgrst.object+json"}});if(!savedRequest.ok)return Response.json({error:"No se pudo consultar el avance guardado."},{status:503,headers:sessionHeaders(current.tokens)});const savedRoot=(await savedRequest.json() as {progreso?:Record<string,unknown>}).progreso||{};const saved=(savedRoot.u2&&typeof savedRoot.u2==="object"?savedRoot.u2:{}) as Record<string,unknown>;
  const savedReset=typeof saved.resetAt==="string"?saved.resetAt:"",incomingReset=typeof incoming.resetAt==="string"?incoming.resetAt:"";
  if(savedReset&&savedReset!==incomingReset)return Response.json({error:"El docente reinició este intento.",reset:true,progress:saved},{status:409,headers:sessionHeaders(current.tokens)});
  const savedDone=Array.isArray(saved.done)?saved.done.filter((item):item is string=>typeof item==="string"):[];
@@ -68,6 +69,9 @@ export async function PUT(request:Request){
  const topicErrors=Object.fromEntries([...new Set([...Object.keys(savedTopicErrors),...Object.keys(incomingTopicErrors)])].map(key=>[key,Math.max(Number(savedTopicErrors[key])||0,Number(incomingTopicErrors[key])||0)]));
  // El avance de un mismo intento es acumulativo. Así, una solicitud antigua que
  // llegue tarde nunca puede borrar una actividad que ya fue completada.
+ const savedQuick=saved.quickProgressByTopic&&typeof saved.quickProgressByTopic==="object"?saved.quickProgressByTopic as Record<string,number>:{};
+ const incomingQuick=incoming.quickProgressByTopic&&typeof incoming.quickProgressByTopic==="object"?incoming.quickProgressByTopic as Record<string,number>:{};
+ const quickProgressByTopic=Object.fromEntries([...new Set([...Object.keys(savedQuick),...Object.keys(incomingQuick)])].map(key=>[key,Math.min(4,Math.max(0,Number(savedQuick[key])||0,Number(incomingQuick[key])||0))]));
  const progress={
   ...saved,
   ...incoming,
@@ -75,6 +79,7 @@ export async function PUT(request:Request){
   errorCount:Math.max(Number(saved.errorCount)||0,Number(incoming.errorCount)||0),
   attemptCount:Math.max(Number(saved.attemptCount)||0,Number(incoming.attemptCount)||0),
   topicErrors,
+  quickProgressByTopic,
   resetAt:savedReset||incomingReset||undefined,
   history:Array.isArray(saved.history)?saved.history:Array.isArray(incoming.history)?incoming.history:[]
  };
