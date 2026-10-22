@@ -71,7 +71,7 @@ export async function PUT(request:Request){
  // llegue tarde nunca puede borrar una actividad que ya fue completada.
  const savedQuick=saved.quickProgressByTopic&&typeof saved.quickProgressByTopic==="object"?saved.quickProgressByTopic as Record<string,number>:{};
  const incomingQuick=incoming.quickProgressByTopic&&typeof incoming.quickProgressByTopic==="object"?incoming.quickProgressByTopic as Record<string,number>:{};
- const quickProgressByTopic=Object.fromEntries([...new Set([...Object.keys(savedQuick),...Object.keys(incomingQuick)])].map(key=>[key,Math.min(4,Math.max(0,Number(savedQuick[key])||0,Number(incomingQuick[key])||0))]));
+ const quickProgressByTopic=Object.fromEntries([...new Set([...Object.keys(savedQuick),...Object.keys(incomingQuick)])].map(key=>[key,Math.min(5,Math.max(0,Number(savedQuick[key])||0,Number(incomingQuick[key])||0))]));
  const progress={
   ...saved,
   ...incoming,
